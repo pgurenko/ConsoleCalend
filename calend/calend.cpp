@@ -16,8 +16,7 @@ void printError();
 int getFirstDayOfWeek();
 int getMonthStartDay(int year, int month);
 int getDaysInMonth(int year, int month);
-bool isToday(tm& Value);
-bool isTomorrow(tm& Value);
+bool isToday(int year, int month, int day);
 
 int main(int argc, const char* argv[])
 {
@@ -37,6 +36,9 @@ int main(int argc, const char* argv[])
 		return 0;
 	}
 
+	// Set environment's default locale
+	setlocale(LC_ALL, "");
+
 	// Init console colors
 	HANDLE hstdout = GetStdHandle(STD_OUTPUT_HANDLE);
 
@@ -44,29 +46,19 @@ int main(int argc, const char* argv[])
 	GetConsoleScreenBufferInfo( hstdout, &csbi );
 	
 	int iFirstWeekDay = getFirstDayOfWeek();
-
-	wchar_t Buf[255];
-	tm dtCurrent =
-	{
-        0,			  /* seconds after the minute - [0,59] */
-        0,			  /* minutes after the hour - [0,59] */
-        0,			  /* hours since midnight - [0,23] */
-        1,            /* day of the month - [1,31] */
-        iMonth - 1,   /* months since January - [0,11] */
-        iYear - 1900, /* years since 1900 */
-        iFirstWeekDay,/* days since Sunday - [0,6] */
-        0,			  /* days since January 1 - [0,365] */
-        0,			  /* daylight savings time flag */
-	};
-
-	int iMonthStartDay = getMonthStartDay(iYear, iMonth);
+	int iMonthStartWeekDay = getMonthStartDay(iYear, iMonth);
 	int iDaysInMonth = getDaysInMonth(iYear, iMonth);
 	
+	wchar_t Buf[255];
+
 	int iRow = 0;
 	bool bFillCalendar = false;
-	while(dtCurrent.tm_mday <= iDaysInMonth)
+	int iCurrentWeekDay = iFirstWeekDay;
+	int iCurrentMonthDay = 1;
+
+	while(iCurrentMonthDay <= iDaysInMonth)
 	{
-		dtCurrent.tm_wday = iFirstWeekDay;
+		iCurrentWeekDay = iFirstWeekDay;
 		for(int i = 0; i < 7; i++)
 		{
 			if(iRow == 0)
@@ -74,15 +66,15 @@ int main(int argc, const char* argv[])
 				// Setting white color on black background
 				SetConsoleTextAttribute(hstdout, 0xF0);
 
-				wcsftime(Buf, 255, L"%a", &dtCurrent);
-				wprintf(L"%5s", Buf);
+				GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_SABBREVDAYNAME1 + iCurrentWeekDay, Buf, 255);
+				wprintf(L"%4.3ls ", Buf);
 			}
 			else if(iRow == 1)
 			{
 				// Setting white color on black background
 				SetConsoleTextAttribute(hstdout, 0x7F);
 
-				if(iMonthStartDay == dtCurrent.tm_wday)
+				if(iMonthStartWeekDay == iCurrentWeekDay)
 				{
 					bFillCalendar = true;
 				}
@@ -97,7 +89,7 @@ int main(int argc, const char* argv[])
 			if(bFillCalendar)
 			{
 				// Setting days color
-				if(dtCurrent.tm_wday == 0 || dtCurrent.tm_wday == 6)
+				if(iCurrentWeekDay == 5 || iCurrentWeekDay == 6)
 				{
 					// Sundays and saturdays are light red!
 					SetConsoleTextAttribute(hstdout, 0x7C);
@@ -108,43 +100,32 @@ int main(int argc, const char* argv[])
 					SetConsoleTextAttribute(hstdout, 0x71);
 				}
 
-				if(isToday(dtCurrent))
+				if(isToday(iYear, iMonth, iCurrentMonthDay))
 				{
 					// Printing "today" in the brackets
-					swprintf(Buf, L"[%2d]", dtCurrent.tm_mday);
-					wprintf(L"%6s", Buf);
-				}
-				else if(isTomorrow(dtCurrent) && i != 0 && i != 6)
-				{
-					// After "today" interval is shorter
-					wprintf(L"%4d", dtCurrent.tm_mday);
+					swprintf(Buf, L"[%2d]", iCurrentMonthDay);
+					wprintf(L"%5.4s", Buf);
 				}
 				else
 				{
-					wprintf(L"%5d", dtCurrent.tm_mday);
+					wprintf(L"%4d ", iCurrentMonthDay);
 				}
 
-				dtCurrent.tm_mday++;
+				iCurrentMonthDay++;
 
-				if(dtCurrent.tm_mday > iDaysInMonth)
+				if(iCurrentMonthDay > iDaysInMonth)
 				{
 					bFillCalendar = false;
 				}
 			}
 
-			// Space for nice formatting:)
-			if(i == 6 && !isTomorrow(dtCurrent))
+			if(iCurrentWeekDay == 6)
 			{
-				wprintf(L" ");
-			}
-
-			if(dtCurrent.tm_wday == 6)
-			{
-				dtCurrent.tm_wday = 0;
+				iCurrentWeekDay = 0;
 			}
 			else
 			{
-				dtCurrent.tm_wday++;
+				iCurrentWeekDay++;
 			}
 		}
 
@@ -172,26 +153,12 @@ int getFirstDayOfWeek()
 {
 	// Let's make it's sunday by default
 	int result = 0;
+	GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_IFIRSTDAYOFWEEK, (LPWSTR)&result, 2);
 
-	HKEY hKey;
-	if (RegOpenKeyEx(HKEY_CURRENT_USER, L"Control Panel\\International", 0, KEY_QUERY_VALUE, &hKey) == ERROR_SUCCESS)
-    {
-		DWORD dwLength = sizeof(DWORD);
-		DWORD dwValue = 0;
-		DWORD dwType = 0;
-		if(RegQueryValueEx(hKey, L"iFirstDayOfWeek", NULL, &dwType, (LPBYTE)&dwValue, &dwLength) == ERROR_SUCCESS)
-		{
-			result = dwValue - '0';
-			if(result == 6)
-			{
-				result = 0;
-			}
-			else
-			{
-				result++;
-			}
-		}
-    }
+	// GetLocaleInfo returns numeric char '0' - '6'
+	// Hence, just subtracting...
+	result -= '0';
+
 	return result;
 }
 
@@ -213,6 +180,15 @@ int getMonthStartDay(int year, int month)
 
 	// setting tm_wday and tm_yday
 	mktime(&dtStart);
+
+	if(dtStart.tm_wday == 0)
+	{
+		dtStart.tm_wday = 6;
+	}
+	else
+	{
+		dtStart.tm_wday--;
+	}
 
 	return dtStart.tm_wday;
 }
@@ -240,20 +216,11 @@ int getDaysInMonth(int year, int month)
 	return result;
 }
 
-bool isToday(tm& Value)
+bool isToday(int year, int month, int day)
 {
 	time_t tmRawTime = time(0);
 	tm* dtNow = localtime(&tmRawTime);
-	return (dtNow->tm_year == Value.tm_year && 
-			dtNow->tm_mon == Value.tm_mon && 
-			dtNow->tm_mday == Value.tm_mday);
-}
-
-bool isTomorrow(tm& Value)
-{
-	time_t tmRawTime = time(0);
-	tm* dtNow = localtime(&tmRawTime);
-	return (dtNow->tm_year == Value.tm_year && 
-			dtNow->tm_mon == Value.tm_mon && 
-			dtNow->tm_mday + 1 == Value.tm_mday);
+	return (dtNow->tm_year + 1900 == year && 
+			dtNow->tm_mon + 1 == month && 
+			dtNow->tm_mday == day);
 }
