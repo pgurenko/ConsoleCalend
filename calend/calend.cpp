@@ -2,7 +2,7 @@
 // Author: Pavel Gurenko <pgurenko@gmail.com>
 // Quiz program to show off the console calendar.
 // Implemented under: Visual Studio 2010
-// Platform: Windows only (has windows-specific console coloring code)
+// Platform: Windows only (using windows-specific locale and console APIs)
 //
 
 #include <stdio.h>
